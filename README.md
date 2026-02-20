@@ -1,0 +1,152 @@
+# NBA Random Draft Lineup (MVP)
+
+Production-style MVP built with Next.js App Router + TypeScript + Tailwind + Prisma (SQLite).
+
+## What this app does
+
+- Plays one round of 5 draws.
+- Draws NBA teams uniformly at random without replacement.
+- On each draw, user picks exactly one player from that team roster.
+- User assigns that player to one open lineup slot: `PG`, `SG`, `SF`, `PF`, `C`.
+- Filled slots lock for the rest of the round.
+- After 5 picks, app computes normalized `Team Score` (0-100), stores run, and generates a share code.
+- Shared results are read-only via `/results/[shareCode]`.
+- Friend leaderboard supports filtering by `groupCode`.
+
+## Stack
+
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- Prisma + SQLite
+- Vitest (unit tests)
+- Playwright (smoke e2e)
+
+## Local development
+
+## Prerequisites
+
+- Node.js 20+
+- npm 10+
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Environment:
+
+A local `.env` is already included for convenience:
+
+```env
+DATABASE_URL="file:./prisma/dev.db"
+```
+
+If you want to recreate it manually:
+
+```bash
+cp .env.example .env
+```
+
+3. Start dev server:
+
+```bash
+npm run dev
+```
+
+`predev` runs `prisma migrate deploy`, so a fresh local SQLite DB is initialized automatically.
+
+## Seed demo runs (optional)
+
+```bash
+npm run db:seed
+```
+
+This adds sample leaderboard runs with share codes:
+
+- `DEMO01`
+- `DEMO02`
+
+## Run tests
+
+Unit tests:
+
+```bash
+npm run test:unit
+```
+
+Playwright smoke test:
+
+```bash
+npx playwright install
+npm run test:e2e
+```
+
+## Game/data implementation notes
+
+- Teams: `data/teams.json` (all 30 teams)
+- Rosters: `data/rosters.json` (static MVP roster snapshots)
+- Advanced stats: `data/stats.json` keyed by `"Player Name|Season"`
+- Missing stats fallback is applied and flagged in results UI.
+
+## Deterministic randomness
+
+- Users can provide an optional `seed` when starting a game.
+- Same seed => same 5-team draw sequence.
+- Seed is persisted and displayed in results.
+
+## Scoring configuration
+
+Scoring logic lives in:
+
+- `src/lib/scoring.ts`
+
+It includes:
+
+- metric weights
+- metric normalization ranges
+- 0-100 team score normalization
+
+To tune balance, edit `METRIC_WEIGHTS` and `METRIC_RANGES` in that file.
+
+## Prisma
+
+Schema:
+
+- `prisma/schema.prisma`
+
+Migration:
+
+- `prisma/migrations/20260220000000_init/migration.sql`
+
+Main models:
+
+- `DraftSession` (persisted in-progress game state)
+- `Run` (completed round metadata + share code)
+- `RunPick` (slot/player stats/contribution breakdown)
+
+## Routes
+
+- `/` Home (start game, group code, seed, rules)
+- `/draft` Draft board
+- `/results/[shareCode]` Read-only run results
+- `/leaderboard` Friend leaderboard with group filter
+
+## Deploy for a shareable link (Render + SQLite disk)
+
+This repo now includes `render.yaml` + `Dockerfile` for one-click deploy on Render.
+
+1. Push `/Users/andrew.oh/nba-random-draft-lineup` to GitHub.
+2. In Render, choose `New +` -> `Blueprint`.
+3. Select your repo; Render will read `/Users/andrew.oh/nba-random-draft-lineup/render.yaml`.
+4. Deploy.
+
+After deploy, Render gives you a public URL your friends can open.
+
+Notes:
+- SQLite persistence is kept on the mounted Render disk at `/data/dev.db`.
+- `npm start` runs Prisma migrations on boot via `prestart`.
+- This is fine for MVP traffic. For higher concurrency, move to Postgres.

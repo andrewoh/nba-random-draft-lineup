@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nba-random-draft-lineup
+    env: docker
+    autoDeploy: true
+    plan: free
+    disk:
+      name: sqlite-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        value: file:/data/dev.db
