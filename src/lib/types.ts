@@ -26,6 +26,8 @@ export type StatsLookup = {
   season: string;
   stats: PlayerStats;
   usedFallback: boolean;
+  seasonsUsed: string[];
+  projectedFromSeasons: number;
 };
 
 export type LineupPick = {

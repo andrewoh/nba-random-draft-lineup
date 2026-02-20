@@ -59,6 +59,10 @@ export default async function DraftPage({
         </Link>
       </div>
 
+      <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+        Quick start: pick one player from the drawn team, assign only to an eligible position, and beat the 24-second shot clock.
+      </p>
+
       <DraftBoard
         key={`${draftView.id}-${draftView.currentDrawIndex}-${draftView.shotClockDeadlineAt ?? 'done'}`}
         currentTeam={currentTeam}

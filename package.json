@@ -15,6 +15,7 @@
     "test:unit": "vitest run",
     "pretest:e2e": "./node_modules/.bin/prisma migrate deploy",
     "test:e2e": "playwright test",
+    "data:sync": "node --import tsx scripts/sync-nba-data.ts",
     "prisma:generate": "./node_modules/.bin/prisma generate",
     "prisma:migrate": "./node_modules/.bin/prisma migrate dev",
     "db:seed": "./node_modules/.bin/prisma db seed",

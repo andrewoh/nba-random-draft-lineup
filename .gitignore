@@ -8,3 +8,5 @@ test-results
 .env
 prisma/dev.db
 prisma/dev.db-journal
+tsconfig.tsbuildinfo
+prisma/prisma

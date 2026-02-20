@@ -91,9 +91,9 @@ export default async function LeaderboardPage({
                                   <Image
                                     src={teamLogoUrl}
                                     alt={`${pick.teamAbbr} logo`}
-                                    width={14}
-                                    height={14}
-                                    className="h-3.5 w-3.5 rounded-sm border border-slate-200 bg-white p-[1px]"
+                                    width={28}
+                                    height={28}
+                                    className="h-7 w-7 rounded-sm border border-slate-200 bg-white p-[2px]"
                                   />
                                 ) : null}
                                 {pick.isPenalty ? 'Shot Clock Violation' : pick.playerName}

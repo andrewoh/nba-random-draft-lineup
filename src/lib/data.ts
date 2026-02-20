@@ -1,4 +1,7 @@
-import { DEFAULT_SEASON, FALLBACK_PLAYER_STATS } from '@/lib/constants';
+import {
+  DEFAULT_SEASON,
+  STATS_LOOKBACK_SEASONS
+} from '@/lib/constants';
 import { LINEUP_SLOTS } from '@/lib/types';
 import type { LineupSlot, PlayerStats, RosterPlayer, StatsLookup, Team } from '@/lib/types';
 import playerPositionsData from '../../data/player_positions.json';
@@ -12,6 +15,7 @@ const typedStats = statsData as Record<string, PlayerStats>;
 const typedPlayerPositions = playerPositionsData as Record<string, LineupSlot[]>;
 
 const teamByAbbr = new Map(typedTeams.map((team) => [team.abbr, team]));
+const statsByPlayer = new Map<string, Map<string, PlayerStats>>();
 const teamLogoIdByAbbr: Record<string, string> = {
   ATL: '1610612737',
   BOS: '1610612738',
@@ -44,6 +48,89 @@ const teamLogoIdByAbbr: Record<string, string> = {
   UTA: '1610612762',
   WAS: '1610612764'
 };
+
+for (const [key, value] of Object.entries(typedStats)) {
+  const dividerIndex = key.lastIndexOf('|');
+  if (dividerIndex === -1) {
+    continue;
+  }
+
+  const playerName = key.slice(0, dividerIndex);
+  const season = key.slice(dividerIndex + 1);
+  const playerSeasons = statsByPlayer.get(playerName) ?? new Map<string, PlayerStats>();
+  playerSeasons.set(season, value);
+  statsByPlayer.set(playerName, playerSeasons);
+}
+
+function seasonToStartYear(season: string): number | null {
+  const match = season.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]);
+}
+
+function startYearToSeason(startYear: number): string {
+  const endYear = String((startYear + 1) % 100).padStart(2, '0');
+  return `${startYear}-${endYear}`;
+}
+
+function getLookbackSeasons(targetSeason: string): string[] {
+  const targetStartYear = seasonToStartYear(targetSeason);
+  if (!targetStartYear) {
+    return [targetSeason];
+  }
+
+  return Array.from({ length: STATS_LOOKBACK_SEASONS }, (_, index) =>
+    startYearToSeason(targetStartYear - index)
+  );
+}
+
+function averageStats(statsList: PlayerStats[]): PlayerStats {
+  const total = statsList.reduce(
+    (sum, stats) => ({
+      bpm: sum.bpm + stats.bpm,
+      ws48: sum.ws48 + stats.ws48,
+      vorp: sum.vorp + stats.vorp,
+      epm: sum.epm + stats.epm
+    }),
+    { bpm: 0, ws48: 0, vorp: 0, epm: 0 }
+  );
+
+  return {
+    bpm: total.bpm / statsList.length,
+    ws48: total.ws48 / statsList.length,
+    vorp: total.vorp / statsList.length,
+    epm: total.epm / statsList.length
+  };
+}
+
+function baselineByPrimarySlot(slot: LineupSlot): PlayerStats {
+  if (slot === 'PG') {
+    return { bpm: 0.8, ws48: 0.093, vorp: 0.7, epm: 0.7 };
+  }
+
+  if (slot === 'SG') {
+    return { bpm: 0.5, ws48: 0.089, vorp: 0.5, epm: 0.4 };
+  }
+
+  if (slot === 'SF') {
+    return { bpm: 0.6, ws48: 0.094, vorp: 0.6, epm: 0.5 };
+  }
+
+  if (slot === 'PF') {
+    return { bpm: 0.7, ws48: 0.102, vorp: 0.8, epm: 0.6 };
+  }
+
+  return { bpm: 0.9, ws48: 0.109, vorp: 0.9, epm: 0.7 };
+}
+
+function projectedBaselineStats(playerName: string): PlayerStats {
+  const exactSlots = typedPlayerPositions[playerName];
+  const primarySlot = exactSlots?.[0] ?? 'SF';
+  return baselineByPrimarySlot(primarySlot);
+}
 
 export function getAllTeams(): Team[] {
   return typedTeams;
@@ -88,21 +175,48 @@ export function getTeamLogoUrl(teamAbbr: string): string | null {
 
 export function lookupPlayerStats(playerName: string, season = DEFAULT_SEASON): StatsLookup {
   const key = `${playerName}|${season}`;
-  const stats = typedStats[key];
+  const playerSeasons = statsByPlayer.get(playerName);
 
-  if (stats) {
+  if (!playerSeasons || playerSeasons.size === 0) {
     return {
       key,
       season,
-      stats,
-      usedFallback: false
+      stats: projectedBaselineStats(playerName),
+      usedFallback: true,
+      seasonsUsed: ['POS_PROJECTION'],
+      projectedFromSeasons: 0
     };
   }
+
+  const lookbackSeasons = getLookbackSeasons(season);
+  const directLookback = lookbackSeasons
+    .map((lookbackSeason) => {
+      const stats = playerSeasons.get(lookbackSeason);
+      return stats ? { season: lookbackSeason, stats } : null;
+    })
+    .filter((entry): entry is { season: string; stats: PlayerStats } => Boolean(entry));
+
+  const resolvedSeasons =
+    directLookback.length > 0
+      ? directLookback
+      : [...playerSeasons.entries()]
+          .map(([playerSeason, stats]) => ({
+            season: playerSeason,
+            stats,
+            seasonStartYear: seasonToStartYear(playerSeason) ?? 0
+          }))
+          .sort((a, b) => b.seasonStartYear - a.seasonStartYear)
+          .slice(0, STATS_LOOKBACK_SEASONS)
+          .map(({ season: playerSeason, stats }) => ({ season: playerSeason, stats }));
+
+  const averaged = averageStats(resolvedSeasons.map((entry) => entry.stats));
 
   return {
     key,
     season,
-    stats: FALLBACK_PLAYER_STATS,
-    usedFallback: true
+    stats: averaged,
+    usedFallback: false,
+    seasonsUsed: resolvedSeasons.map((entry) => entry.season),
+    projectedFromSeasons: resolvedSeasons.length
   };
 }

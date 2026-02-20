@@ -58,7 +58,7 @@ export default async function ResultsPage({
 
         {run.usedFallbackStats ? (
           <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Some players used fallback stats because no advanced stat entry exists in the MVP dataset.
+            Some players had no historical stat records available and used baseline projected stats instead.
           </p>
         ) : null}
 
@@ -77,9 +77,9 @@ export default async function ResultsPage({
                     <Image
                       src={teamLogoUrl}
                       alt={`${pick.teamAbbr} logo`}
-                      width={16}
-                      height={16}
-                      className="h-4 w-4 rounded-sm border border-slate-200 bg-white p-[1px]"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-sm border border-slate-200 bg-white p-[2px]"
                     />
                   ) : null}
                   <span>{pick.teamAbbr}</span>

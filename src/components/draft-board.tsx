@@ -45,7 +45,6 @@ export function DraftBoard({
   const router = useRouter();
   const teamLogoUrl = getTeamLogoUrl(currentTeam.abbr);
 
-  const [search, setSearch] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<LineupSlot | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -54,12 +53,6 @@ export function DraftBoard({
     getSecondsRemaining(shotClockDeadlineAt)
   );
   const timeoutHandledRef = useRef(false);
-
-  const filteredRoster = useMemo(
-    () =>
-      roster.filter((player) => player.name.toLowerCase().includes(search.trim().toLowerCase())),
-    [roster, search]
-  );
 
   const selectedPlayerProfile = useMemo(
     () => roster.find((player) => player.name === selectedPlayer) ?? null,
@@ -121,9 +114,9 @@ export function DraftBoard({
               <Image
                 src={teamLogoUrl}
                 alt={`${currentTeam.name} logo`}
-                width={48}
-                height={48}
-                className="h-12 w-12 rounded-md border border-slate-200 bg-white p-1"
+                width={96}
+                height={96}
+                className="h-24 w-24 rounded-md border border-slate-200 bg-white p-2"
               />
             ) : null}
 
@@ -136,18 +129,17 @@ export function DraftBoard({
             </div>
           </div>
 
-          <div className="rounded-lg border-2 border-red-700 bg-black px-4 py-2 text-center shadow-[0_0_24px_rgba(220,38,38,0.45)]">
-            <p className="text-[10px] font-semibold tracking-[0.25em] text-red-400">SHOT CLOCK</p>
-            <p
-              className={cn(
-                'font-mono text-4xl font-bold leading-none text-red-500',
-                secondsRemaining <= 5 && 'animate-pulse'
-              )}
-              data-testid="shot-clock"
-            >
-              {String(secondsRemaining).padStart(2, '0')}
-            </p>
-            <p className="text-[10px] text-red-300">{shotClockSeconds}s per draw</p>
+          <div className="shot-clock-shell">
+            <p className="shot-clock-label">SHOT CLOCK</p>
+            <div className="shot-clock-display">
+              <p
+                className={cn('shot-clock-value', secondsRemaining <= 5 && 'animate-pulse')}
+                data-testid="shot-clock"
+              >
+                {String(secondsRemaining).padStart(2, '0')}
+              </p>
+            </div>
+            <p className="shot-clock-caption">{shotClockSeconds}s per draw</p>
           </div>
 
           <div className="text-sm text-slate-600">
@@ -169,20 +161,13 @@ export function DraftBoard({
         <section className="card p-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-slate-900">Roster</h2>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search players"
-              className="input max-w-48"
-              data-testid="roster-search"
-            />
           </div>
 
-          {filteredRoster.length === 0 ? (
-            <p className="text-sm text-slate-500">No players match your search.</p>
+          {roster.length === 0 ? (
+            <p className="text-sm text-slate-500">No players available for this team.</p>
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2">
-              {filteredRoster.map((player, index) => {
+              {roster.map((player, index) => {
                 const isSelected = selectedPlayer === player.name;
                 return (
                   <li key={player.name}>

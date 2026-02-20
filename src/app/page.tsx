@@ -68,9 +68,12 @@ export default function HomePage({
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600">
           <li>Each draw gives one random NBA team with no repeats in the round.</li>
           <li>Pick exactly one player from that team roster.</li>
-          <li>Assign that player to one open lineup slot.</li>
+          <li>Players can only be assigned to real eligible positions (no PG at C).</li>
+          <li>You have 24 seconds per draw to lock in a player.</li>
+          <li>If time expires, one random open slot gets a 0-point shot-clock penalty.</li>
+          <li>Assign your pick to one open lineup slot.</li>
           <li>Filled slots are locked for the rest of the round.</li>
-          <li>After five picks, your Team Score is calculated on a 0-100 scale.</li>
+          <li>Team Score is a projected 3-season advanced-metric blend normalized to 0-100.</li>
         </ol>
       </section>
     </div>

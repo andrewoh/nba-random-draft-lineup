@@ -12,7 +12,7 @@ Production-style MVP built with Next.js App Router + TypeScript + Tailwind + Pri
 - Each draw has a 24-second shot clock. If it expires, a random open slot is auto-filled with a 0-point penalty.
 - User assigns that player to one open lineup slot: `PG`, `SG`, `SF`, `PF`, `C`.
 - Filled slots lock for the rest of the round.
-- After 5 picks, app computes normalized `Team Score` (0-100), stores run, and generates a share code.
+- After 5 picks, app computes normalized `Team Score` (0-100) from projected 3-season advanced metrics, stores run, and generates a share code.
 - Shared results are read-only via `/results/[shareCode]`.
 - Friend leaderboard supports filtering by `groupCode`.
 
@@ -62,6 +62,27 @@ npm run dev
 
 `predev` runs `prisma migrate deploy`, so a fresh local SQLite DB is initialized automatically.
 
+## Sync latest NBA data
+
+Default target is the latest season: `2025-26`.  
+The sync script pulls three seasons by default (`2025-26`, `2024-25`, `2023-24`) for 3-season projections.
+
+```bash
+npm run data:sync
+```
+
+Quick validation (expects every team to have at least 12 players):
+
+```bash
+node -e "const r=require('./data/rosters.json');console.log(Object.entries(r).map(([t,p])=>`${t}:${p.length}`).join('\n'))"
+```
+
+Optional overrides:
+
+```bash
+TARGET_SEASON=2025-26 SYNC_SEASONS=2025-26,2024-25,2023-24 npm run data:sync
+```
+
 ## Seed demo runs (optional)
 
 ```bash
@@ -91,10 +112,11 @@ npm run test:e2e
 ## Game/data implementation notes
 
 - Teams: `data/teams.json` (all 30 teams)
-- Rosters: `data/rosters.json` (static MVP roster snapshots)
+- Rosters: `data/rosters.json` (updated via `npm run data:sync`; sync backfills from prior season if a team has <12 players)
 - Position eligibility: `data/player_positions.json`
 - Advanced stats: `data/stats.json` keyed by `"Player Name|Season"`
-- Missing stats fallback is applied and flagged in results UI.
+- Scoring uses a 3-season lookback average (projected from available seasons for rookies/young players).
+- If no historical stats are available, baseline projected stats are used and flagged in results UI.
 - Shot clock penalties are saved as `Shot Clock Violation` picks with 0 contribution.
 
 ## Deterministic randomness

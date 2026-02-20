@@ -1,6 +1,7 @@
 import type { PlayerStats } from '@/lib/types';
 
-export const DEFAULT_SEASON = '2024-25';
+export const DEFAULT_SEASON = '2025-26';
+export const STATS_LOOKBACK_SEASONS = 3;
 export const TOTAL_DRAWS = 5;
 const parsedShotClockSeconds = Number(process.env.SHOT_CLOCK_SECONDS ?? 24);
 export const SHOT_CLOCK_SECONDS =

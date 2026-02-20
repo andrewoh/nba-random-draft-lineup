@@ -19,7 +19,7 @@ describe('score normalization', () => {
     expect(result.playerScores).toHaveLength(5);
   });
 
-  it('flags fallback stats when player metrics are missing', () => {
+  it('projects baseline stats when player metrics are missing', () => {
     const picks: LineupPick[] = [
       { slot: 'PG', playerName: 'Not In Stats Dataset', teamAbbr: 'ATL', teamName: 'Atlanta Hawks' }
     ];
@@ -28,6 +28,7 @@ describe('score normalization', () => {
 
     expect(result.usedFallbackStats).toBe(true);
     expect(result.playerScores[0]?.usedFallback).toBe(true);
+    expect(result.playerScores[0]?.stats.bpm).toBeGreaterThan(0);
   });
 
   it('clamps extreme player values into 0-100 contribution scale', () => {
