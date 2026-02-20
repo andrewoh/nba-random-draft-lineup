@@ -4,10 +4,6 @@ services:
     env: docker
     autoDeploy: true
     plan: free
-    disk:
-      name: sqlite-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
-        value: file:/data/dev.db
+        value: file:/tmp/dev.db

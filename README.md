@@ -135,9 +135,9 @@ Main models:
 - `/results/[shareCode]` Read-only run results
 - `/leaderboard` Friend leaderboard with group filter
 
-## Deploy for a shareable link (Render + SQLite disk)
+## Deploy for a shareable link (Render)
 
-This repo now includes `render.yaml` + `Dockerfile` for one-click deploy on Render.
+This repo includes `render.yaml` + `Dockerfile` for one-click deploy on Render.
 
 1. Push `/Users/andrew.oh/nba-random-draft-lineup` to GitHub.
 2. In Render, choose `New +` -> `Blueprint`.
@@ -147,6 +147,6 @@ This repo now includes `render.yaml` + `Dockerfile` for one-click deploy on Rend
 After deploy, Render gives you a public URL your friends can open.
 
 Notes:
-- SQLite persistence is kept on the mounted Render disk at `/data/dev.db`.
+- Current `render.yaml` is Free-tier compatible and stores SQLite at `/tmp/dev.db` (ephemeral; data can reset on restart/redeploy).
 - `npm start` runs Prisma migrations on boot via `prestart`.
-- This is fine for MVP traffic. For higher concurrency, move to Postgres.
+- For persistent data, switch Render plan from `free` to `starter` and add a mounted disk, or move to Postgres.
