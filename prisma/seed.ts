@@ -37,6 +37,7 @@ async function createSampleRun(input: {
           vorp: playerScore.stats.vorp,
           epm: playerScore.stats.epm,
           usedFallback: playerScore.usedFallback,
+          isPenalty: Boolean(playerScore.pick.isPenalty),
           contribution: playerScore.contribution
         }))
       }

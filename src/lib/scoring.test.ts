@@ -39,4 +39,22 @@ describe('score normalization', () => {
     expect(poor.contribution).toBeGreaterThanOrEqual(0);
     expect(poor.contribution).toBeLessThanOrEqual(100);
   });
+
+  it('assigns zero contribution to shot clock penalty picks', () => {
+    const picks: LineupPick[] = [
+      {
+        slot: 'PG',
+        playerName: 'Shot Clock Violation',
+        teamAbbr: 'ATL',
+        teamName: 'Atlanta Hawks',
+        isPenalty: true
+      }
+    ];
+
+    const result = scoreLineup(picks);
+
+    expect(result.teamScore).toBe(0);
+    expect(result.playerScores[0]?.contribution).toBe(0);
+    expect(result.playerScores[0]?.usedFallback).toBe(false);
+  });
 });

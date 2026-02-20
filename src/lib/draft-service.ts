@@ -1,8 +1,18 @@
 import type { Prisma } from '@prisma/client';
-import { TOTAL_DRAWS } from '@/lib/constants';
-import { getRosterByTeam, getTeamByAbbr } from '@/lib/data';
+import {
+  SHOT_CLOCK_MS,
+  SHOT_CLOCK_PENALTY_PLAYER_NAME,
+  SHOT_CLOCK_SECONDS,
+  TOTAL_DRAWS
+} from '@/lib/constants';
+import {
+  getPlayerEligibleSlots,
+  getRosterNamesByTeam,
+  getTeamByAbbr
+} from '@/lib/data';
 import { db } from '@/lib/db';
 import { buildDrawSequence } from '@/lib/draw';
+import { createSeededRng } from '@/lib/rng';
 import { getOpenSlots, validatePick, applyPickToLineup } from '@/lib/rules';
 import { scoreLineup } from '@/lib/scoring';
 import { safeParseJson, toJsonString } from '@/lib/serialization';
@@ -50,6 +60,269 @@ function parseDraftStatus(status: string): DraftStatus {
   return 'DRAFTING';
 }
 
+function getShotClockDeadline(drawStartedAt: Date): Date {
+  return new Date(drawStartedAt.getTime() + SHOT_CLOCK_MS);
+}
+
+function isClockExpired(drawStartedAt: Date, now = new Date()): boolean {
+  return now.getTime() >= getShotClockDeadline(drawStartedAt).getTime();
+}
+
+type SessionWithRun = {
+  id: string;
+  cookieToken: string;
+  groupCode: string | null;
+  seed: string | null;
+  drawSequenceJson: string;
+  remainingTeamsJson: string;
+  currentDrawIndex: number;
+  lineupJson: string;
+  chosenPlayersJson: string;
+  drawStartedAt: Date;
+  status: string;
+  runId: string | null;
+  run: {
+    shareCode: string;
+  } | null;
+};
+
+async function fetchDraftSessionByCookieToken(
+  tx: Prisma.TransactionClient,
+  cookieToken: string
+): Promise<SessionWithRun | null> {
+  return tx.draftSession.findUnique({
+    where: { cookieToken },
+    include: {
+      run: {
+        select: {
+          shareCode: true
+        }
+      }
+    }
+  });
+}
+
+async function fetchDraftSessionById(
+  tx: Prisma.TransactionClient,
+  id: string
+): Promise<SessionWithRun> {
+  const session = await tx.draftSession.findUnique({
+    where: { id },
+    include: {
+      run: {
+        select: {
+          shareCode: true
+        }
+      }
+    }
+  });
+
+  if (!session) {
+    throw new Error('Draft session missing after update.');
+  }
+
+  return session;
+}
+
+async function persistDraftState(input: {
+  tx: Prisma.TransactionClient;
+  session: SessionWithRun;
+  drawSequence: string[];
+  lineup: LineupState;
+  chosenPlayers: string[];
+  currentDrawIndex: number;
+  drawStartedAt: Date;
+}): Promise<SessionWithRun> {
+  const { tx, session, drawSequence, lineup, chosenPlayers, currentDrawIndex, drawStartedAt } = input;
+
+  const roundIsComplete =
+    currentDrawIndex >= TOTAL_DRAWS ||
+    currentDrawIndex >= drawSequence.length ||
+    getOpenSlots(lineup).length === 0;
+
+  if (!roundIsComplete) {
+    await tx.draftSession.update({
+      where: { id: session.id },
+      data: {
+        currentDrawIndex,
+        remainingTeamsJson: toJsonString(computeRemainingTeams(drawSequence, currentDrawIndex)),
+        lineupJson: toJsonString(lineup),
+        chosenPlayersJson: toJsonString(chosenPlayers),
+        drawStartedAt,
+        status: 'DRAFTING'
+      }
+    });
+
+    return fetchDraftSessionById(tx, session.id);
+  }
+
+  const orderedPicks = LINEUP_SLOTS.map((lineupSlot) => lineup[lineupSlot]).filter(
+    (pick): pick is LineupPick => Boolean(pick)
+  );
+
+  if (orderedPicks.length !== LINEUP_SLOTS.length) {
+    throw new Error('Round cannot finish until all slots are filled.');
+  }
+
+  const scoring = scoreLineup(orderedPicks);
+  const shareCode = await generateUniqueShareCode(tx);
+
+  const run = await tx.run.create({
+    data: {
+      shareCode,
+      groupCode: session.groupCode,
+      seed: session.seed,
+      teamScore: scoring.teamScore,
+      usedFallbackStats: scoring.usedFallbackStats,
+      lineupJson: toJsonString(lineup),
+      contributionsJson: toJsonString(scoring.playerScores),
+      picks: {
+        create: scoring.playerScores.map((playerScore) => ({
+          slot: playerScore.pick.slot,
+          playerName: playerScore.pick.playerName,
+          teamAbbr: playerScore.pick.teamAbbr,
+          teamName: playerScore.pick.teamName,
+          bpm: playerScore.stats.bpm,
+          ws48: playerScore.stats.ws48,
+          vorp: playerScore.stats.vorp,
+          epm: playerScore.stats.epm,
+          usedFallback: playerScore.usedFallback,
+          isPenalty: Boolean(playerScore.pick.isPenalty),
+          contribution: playerScore.contribution
+        }))
+      }
+    }
+  });
+
+  await tx.draftSession.update({
+    where: { id: session.id },
+    data: {
+      currentDrawIndex,
+      remainingTeamsJson: toJsonString([]),
+      lineupJson: toJsonString(lineup),
+      chosenPlayersJson: toJsonString(chosenPlayers),
+      drawStartedAt,
+      status: 'COMPLETED',
+      runId: run.id
+    }
+  });
+
+  return fetchDraftSessionById(tx, session.id);
+}
+
+function chooseTimeoutSlot(input: {
+  openSlots: LineupSlot[];
+  seed: string | null;
+  sessionId: string;
+  drawIndex: number;
+}): LineupSlot {
+  const { openSlots, seed, sessionId, drawIndex } = input;
+
+  if (openSlots.length === 1) {
+    return openSlots[0];
+  }
+
+  const rng = seed
+    ? createSeededRng(`${seed}:shotclock:${sessionId}:${drawIndex}`)
+    : Math.random;
+
+  const index = Math.floor(rng() * openSlots.length);
+  return openSlots[index] ?? openSlots[0];
+}
+
+async function applyShotClockTimeouts(
+  tx: Prisma.TransactionClient,
+  session: SessionWithRun
+): Promise<SessionWithRun> {
+  if (session.status !== 'DRAFTING') {
+    return session;
+  }
+
+  const drawSequence = parseDrawSequence(session.drawSequenceJson);
+  let lineup = parseLineup(session.lineupJson);
+  const chosenPlayers = parseChosenPlayers(session.chosenPlayersJson);
+  let currentDrawIndex = session.currentDrawIndex;
+  let drawStartedAt = new Date(session.drawStartedAt);
+  const now = new Date();
+
+  let timedOutAtLeastOnce = false;
+
+  while (
+    currentDrawIndex < TOTAL_DRAWS &&
+    currentDrawIndex < drawSequence.length &&
+    getOpenSlots(lineup).length > 0 &&
+    isClockExpired(drawStartedAt, now)
+  ) {
+    const currentTeamAbbr = drawSequence[currentDrawIndex] ?? 'N/A';
+    const currentTeam = getTeamByAbbr(currentTeamAbbr);
+    const openSlots = getOpenSlots(lineup);
+    const randomSlot = chooseTimeoutSlot({
+      openSlots,
+      seed: session.seed,
+      sessionId: session.id,
+      drawIndex: currentDrawIndex
+    });
+
+    lineup = applyPickToLineup(lineup, {
+      slot: randomSlot,
+      playerName: SHOT_CLOCK_PENALTY_PLAYER_NAME,
+      teamAbbr: currentTeamAbbr,
+      teamName: currentTeam?.name ?? currentTeamAbbr,
+      isPenalty: true
+    });
+
+    currentDrawIndex += 1;
+    drawStartedAt = new Date(drawStartedAt.getTime() + SHOT_CLOCK_MS);
+    timedOutAtLeastOnce = true;
+  }
+
+  if (!timedOutAtLeastOnce) {
+    return session;
+  }
+
+  return persistDraftState({
+    tx,
+    session,
+    drawSequence,
+    lineup,
+    chosenPlayers,
+    currentDrawIndex,
+    drawStartedAt
+  });
+}
+
+function buildDraftView(session: SessionWithRun): DraftView {
+  const drawSequence = parseDrawSequence(session.drawSequenceJson);
+  const remainingTeams = safeParseJson<string[]>(
+    session.remainingTeamsJson,
+    computeRemainingTeams(drawSequence, session.currentDrawIndex)
+  );
+
+  const isDrafting = session.status === 'DRAFTING';
+  const currentTeamAbbr = drawSequence[session.currentDrawIndex] ?? null;
+  const shotClockDeadlineAt =
+    isDrafting && currentTeamAbbr
+      ? getShotClockDeadline(session.drawStartedAt).toISOString()
+      : null;
+
+  return {
+    id: session.id,
+    cookieToken: session.cookieToken,
+    status: parseDraftStatus(session.status),
+    groupCode: session.groupCode,
+    seed: session.seed,
+    drawSequence,
+    currentDrawIndex: session.currentDrawIndex,
+    currentTeamAbbr,
+    remainingTeams,
+    lineup: parseLineup(session.lineupJson),
+    chosenPlayers: parseChosenPlayers(session.chosenPlayersJson),
+    runShareCode: session.run?.shareCode ?? null,
+    shotClockDeadlineAt,
+    shotClockSeconds: SHOT_CLOCK_SECONDS
+  };
+}
+
 export async function createDraftSession(input: {
   groupCode?: string | null;
   seed?: string | null;
@@ -69,6 +342,7 @@ export async function createDraftSession(input: {
       currentDrawIndex: 0,
       lineupJson: toJsonString({}),
       chosenPlayersJson: toJsonString([]),
+      drawStartedAt: new Date(),
       status: 'DRAFTING'
     }
   });
@@ -87,44 +361,21 @@ export type DraftView = {
   lineup: LineupState;
   chosenPlayers: string[];
   runShareCode: string | null;
+  shotClockDeadlineAt: string | null;
+  shotClockSeconds: number;
 };
 
 export async function getDraftViewByCookieToken(cookieToken: string): Promise<DraftView | null> {
-  const session = await db.draftSession.findUnique({
-    where: { cookieToken },
-    include: {
-      run: {
-        select: {
-          shareCode: true
-        }
-      }
+  return db.$transaction(async (tx) => {
+    const session = await fetchDraftSessionByCookieToken(tx, cookieToken);
+
+    if (!session) {
+      return null;
     }
+
+    const syncedSession = await applyShotClockTimeouts(tx, session);
+    return buildDraftView(syncedSession);
   });
-
-  if (!session) {
-    return null;
-  }
-
-  const drawSequence = parseDrawSequence(session.drawSequenceJson);
-  const remainingTeams = safeParseJson<string[]>(
-    session.remainingTeamsJson,
-    computeRemainingTeams(drawSequence, session.currentDrawIndex)
-  );
-
-  return {
-    id: session.id,
-    cookieToken: session.cookieToken,
-    status: parseDraftStatus(session.status),
-    groupCode: session.groupCode,
-    seed: session.seed,
-    drawSequence,
-    currentDrawIndex: session.currentDrawIndex,
-    currentTeamAbbr: drawSequence[session.currentDrawIndex] ?? null,
-    remainingTeams,
-    lineup: parseLineup(session.lineupJson),
-    chosenPlayers: parseChosenPlayers(session.chosenPlayersJson),
-    runShareCode: session.run?.shareCode ?? null
-  };
 }
 
 export async function submitDraftPick(input: {
@@ -135,26 +386,31 @@ export async function submitDraftPick(input: {
   const { cookieToken, playerName, slot } = input;
 
   return db.$transaction(async (tx) => {
-    const session = await tx.draftSession.findUnique({
-      where: { cookieToken },
-      include: {
-        run: {
-          select: {
-            shareCode: true
-          }
-        }
-      }
-    });
+    const existingSession = await fetchDraftSessionByCookieToken(tx, cookieToken);
 
-    if (!session) {
+    if (!existingSession) {
       throw new Error('Draft session not found. Start a new game.');
     }
+
+    let session = await applyShotClockTimeouts(tx, existingSession);
 
     if (session.status === 'COMPLETED') {
       return {
         completed: true,
         shareCode: session.run?.shareCode
       };
+    }
+
+    if (isClockExpired(session.drawStartedAt)) {
+      session = await applyShotClockTimeouts(tx, session);
+      if (session.status === 'COMPLETED') {
+        return {
+          completed: true,
+          shareCode: session.run?.shareCode
+        };
+      }
+
+      throw new Error('Shot clock expired. A random open slot was assigned 0 points.');
     }
 
     const drawSequence = parseDrawSequence(session.drawSequenceJson);
@@ -176,8 +432,9 @@ export async function submitDraftPick(input: {
       lineup,
       slot,
       playerName,
-      currentTeamRoster: getRosterByTeam(currentTeamAbbr),
-      chosenPlayers
+      currentTeamRoster: getRosterNamesByTeam(currentTeamAbbr),
+      chosenPlayers,
+      playerEligibleSlots: getPlayerEligibleSlots(playerName)
     });
 
     if (!validation.valid) {
@@ -193,77 +450,26 @@ export async function submitDraftPick(input: {
 
     const updatedChosenPlayers = [...chosenPlayers, playerName];
     const nextDrawIndex = session.currentDrawIndex + 1;
-    const roundIsComplete = nextDrawIndex >= TOTAL_DRAWS || getOpenSlots(updatedLineup).length === 0;
 
-    if (!roundIsComplete) {
-      const remainingTeams = computeRemainingTeams(drawSequence, nextDrawIndex);
-      await tx.draftSession.update({
-        where: { id: session.id },
-        data: {
-          currentDrawIndex: nextDrawIndex,
-          remainingTeamsJson: toJsonString(remainingTeams),
-          lineupJson: toJsonString(updatedLineup),
-          chosenPlayersJson: toJsonString(updatedChosenPlayers)
-        }
-      });
+    const savedSession = await persistDraftState({
+      tx,
+      session,
+      drawSequence,
+      lineup: updatedLineup,
+      chosenPlayers: updatedChosenPlayers,
+      currentDrawIndex: nextDrawIndex,
+      drawStartedAt: new Date()
+    });
 
+    if (savedSession.status === 'COMPLETED') {
       return {
-        completed: false
+        completed: true,
+        shareCode: savedSession.run?.shareCode
       };
     }
 
-    const orderedPicks = LINEUP_SLOTS.map((lineupSlot) => updatedLineup[lineupSlot]).filter(
-      (pick): pick is LineupPick => Boolean(pick)
-    );
-
-    if (orderedPicks.length !== LINEUP_SLOTS.length) {
-      throw new Error('Round cannot finish until all slots are filled.');
-    }
-
-    const scoring = scoreLineup(orderedPicks);
-    const shareCode = await generateUniqueShareCode(tx);
-
-    const run = await tx.run.create({
-      data: {
-        shareCode,
-        groupCode: session.groupCode,
-        seed: session.seed,
-        teamScore: scoring.teamScore,
-        usedFallbackStats: scoring.usedFallbackStats,
-        lineupJson: toJsonString(updatedLineup),
-        contributionsJson: toJsonString(scoring.playerScores),
-        picks: {
-          create: scoring.playerScores.map((playerScore) => ({
-            slot: playerScore.pick.slot,
-            playerName: playerScore.pick.playerName,
-            teamAbbr: playerScore.pick.teamAbbr,
-            teamName: playerScore.pick.teamName,
-            bpm: playerScore.stats.bpm,
-            ws48: playerScore.stats.ws48,
-            vorp: playerScore.stats.vorp,
-            epm: playerScore.stats.epm,
-            usedFallback: playerScore.usedFallback,
-            contribution: playerScore.contribution
-          }))
-        }
-      }
-    });
-
-    await tx.draftSession.update({
-      where: { id: session.id },
-      data: {
-        currentDrawIndex: nextDrawIndex,
-        remainingTeamsJson: toJsonString([]),
-        lineupJson: toJsonString(updatedLineup),
-        chosenPlayersJson: toJsonString(updatedChosenPlayers),
-        status: 'COMPLETED',
-        runId: run.id
-      }
-    });
-
     return {
-      completed: true,
-      shareCode: run.shareCode
+      completed: false
     };
   });
 }

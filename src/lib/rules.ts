@@ -19,8 +19,9 @@ export function validatePick(input: {
   playerName: string;
   currentTeamRoster: string[];
   chosenPlayers: string[];
+  playerEligibleSlots: LineupSlot[];
 }): { valid: true } | { valid: false; message: string } {
-  const { lineup, slot, playerName, currentTeamRoster, chosenPlayers } = input;
+  const { lineup, slot, playerName, currentTeamRoster, chosenPlayers, playerEligibleSlots } = input;
 
   if (!canDraftMore(lineup)) {
     return { valid: false, message: 'All lineup slots are already filled.' };
@@ -32,6 +33,13 @@ export function validatePick(input: {
 
   if (!currentTeamRoster.includes(playerName)) {
     return { valid: false, message: `${playerName} is not on the current team roster.` };
+  }
+
+  if (!playerEligibleSlots.includes(slot)) {
+    return {
+      valid: false,
+      message: `${playerName} cannot be assigned to ${slot}. Eligible positions: ${playerEligibleSlots.join(', ')}`
+    };
   }
 
   if (chosenPlayers.includes(playerName)) {

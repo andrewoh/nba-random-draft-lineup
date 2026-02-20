@@ -9,6 +9,11 @@ export type Team = {
   name: string;
 };
 
+export type RosterPlayer = {
+  name: string;
+  eligibleSlots: LineupSlot[];
+};
+
 export type PlayerStats = {
   bpm: number;
   ws48: number;
@@ -28,6 +33,7 @@ export type LineupPick = {
   playerName: string;
   teamAbbr: string;
   teamName: string;
+  isPenalty?: boolean;
 };
 
 export type LineupState = Partial<Record<LineupSlot, LineupPick>>;

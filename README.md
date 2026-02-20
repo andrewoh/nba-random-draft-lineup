@@ -7,6 +7,9 @@ Production-style MVP built with Next.js App Router + TypeScript + Tailwind + Pri
 - Plays one round of 5 draws.
 - Draws NBA teams uniformly at random without replacement.
 - On each draw, user picks exactly one player from that team roster.
+- Team logos are shown from official NBA CDN assets.
+- Players are restricted to realistic position eligibility.
+- Each draw has a 24-second shot clock. If it expires, a random open slot is auto-filled with a 0-point penalty.
 - User assigns that player to one open lineup slot: `PG`, `SG`, `SF`, `PF`, `C`.
 - Filled slots lock for the rest of the round.
 - After 5 picks, app computes normalized `Team Score` (0-100), stores run, and generates a share code.
@@ -42,7 +45,7 @@ npm install
 A local `.env` is already included for convenience:
 
 ```env
-DATABASE_URL="file:./prisma/dev.db"
+DATABASE_URL="file:./dev.db"
 ```
 
 If you want to recreate it manually:
@@ -89,8 +92,10 @@ npm run test:e2e
 
 - Teams: `data/teams.json` (all 30 teams)
 - Rosters: `data/rosters.json` (static MVP roster snapshots)
+- Position eligibility: `data/player_positions.json`
 - Advanced stats: `data/stats.json` keyed by `"Player Name|Season"`
 - Missing stats fallback is applied and flagged in results UI.
+- Shot clock penalties are saved as `Shot Clock Violation` picks with 0 contribution.
 
 ## Deterministic randomness
 
@@ -121,6 +126,7 @@ Schema:
 Migration:
 
 - `prisma/migrations/20260220000000_init/migration.sql`
+- `prisma/migrations/20260220100000_shot_clock_penalties/migration.sql`
 
 Main models:
 

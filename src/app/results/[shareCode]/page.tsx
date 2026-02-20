@@ -1,8 +1,10 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { resetGameAction } from '@/app/actions';
 import { CopyLinkButton } from '@/components/copy-link-button';
+import { getTeamLogoUrl } from '@/lib/data';
 import { formatDateTime } from '@/lib/format';
 import { getRunByShareCode } from '@/lib/run-service';
 
@@ -61,13 +63,30 @@ export default async function ResultsPage({
         ) : null}
 
         <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          {run.picks.map((pick) => (
-            <div key={pick.slot} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-court-700">{pick.slot}</p>
-              <p className="text-sm font-semibold text-slate-900">{pick.playerName}</p>
-              <p className="text-xs text-slate-600">{pick.teamAbbr}</p>
-            </div>
-          ))}
+          {run.picks.map((pick) => {
+            const teamLogoUrl = getTeamLogoUrl(pick.teamAbbr);
+
+            return (
+              <div key={pick.slot} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-court-700">{pick.slot}</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {pick.isPenalty ? 'Shot Clock Violation' : pick.playerName}
+                </p>
+                <div className="mt-1 flex items-center gap-1 text-xs text-slate-600">
+                  {teamLogoUrl ? (
+                    <Image
+                      src={teamLogoUrl}
+                      alt={`${pick.teamAbbr} logo`}
+                      width={16}
+                      height={16}
+                      className="h-4 w-4 rounded-sm border border-slate-200 bg-white p-[1px]"
+                    />
+                  ) : null}
+                  <span>{pick.teamAbbr}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -93,7 +112,7 @@ export default async function ResultsPage({
                 <tr key={pick.id} className="border-t border-slate-100">
                   <td className="px-4 py-3 font-semibold text-slate-900">{pick.slot}</td>
                   <td className="px-4 py-3 text-slate-800">
-                    {pick.playerName}
+                    {pick.isPenalty ? 'Shot Clock Violation' : pick.playerName}
                     <span className="ml-1 text-xs text-slate-500">({pick.teamAbbr})</span>
                     {pick.usedFallback ? (
                       <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase text-amber-700">

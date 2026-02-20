@@ -18,7 +18,8 @@ describe('slot locking rules', () => {
       slot: 'PG',
       playerName: 'Player B',
       currentTeamRoster: ['Player B'],
-      chosenPlayers: []
+      chosenPlayers: [],
+      playerEligibleSlots: ['PG']
     });
 
     expect(validation.valid).toBe(false);
@@ -47,12 +48,29 @@ describe('slot locking rules', () => {
       slot: 'SG',
       playerName: 'Player D',
       currentTeamRoster: ['Player D'],
-      chosenPlayers: ['Player D']
+      chosenPlayers: ['Player D'],
+      playerEligibleSlots: ['SG']
     });
 
     expect(validation.valid).toBe(false);
     if (!validation.valid) {
       expect(validation.message).toContain('already been selected');
+    }
+  });
+
+  it('rejects assigning player outside eligible positions', () => {
+    const validation = validatePick({
+      lineup: {},
+      slot: 'C',
+      playerName: 'Player E',
+      currentTeamRoster: ['Player E'],
+      chosenPlayers: [],
+      playerEligibleSlots: ['PG']
+    });
+
+    expect(validation.valid).toBe(false);
+    if (!validation.valid) {
+      expect(validation.message).toContain('cannot be assigned');
     }
   });
 });

@@ -1,4 +1,6 @@
+import Image from 'next/image';
 import Link from 'next/link';
+import { getTeamLogoUrl } from '@/lib/data';
 import { formatDateTime } from '@/lib/format';
 import { getLeaderboardRuns } from '@/lib/run-service';
 
@@ -78,11 +80,27 @@ export default async function LeaderboardPage({
                     <td className="px-4 py-3 text-slate-700">{run.groupCode ?? 'None'}</td>
                     <td className="px-4 py-3 text-slate-700">
                       <ul className="space-y-1">
-                        {run.picks.map((pick) => (
-                          <li key={pick.id}>
-                            <span className="font-semibold">{pick.slot}</span>: {pick.playerName}
-                          </li>
-                        ))}
+                        {run.picks.map((pick) => {
+                          const teamLogoUrl = getTeamLogoUrl(pick.teamAbbr);
+
+                          return (
+                            <li key={pick.id}>
+                              <span className="font-semibold">{pick.slot}</span>:{' '}
+                              <span className="inline-flex items-center gap-1">
+                                {teamLogoUrl ? (
+                                  <Image
+                                    src={teamLogoUrl}
+                                    alt={`${pick.teamAbbr} logo`}
+                                    width={14}
+                                    height={14}
+                                    className="h-3.5 w-3.5 rounded-sm border border-slate-200 bg-white p-[1px]"
+                                  />
+                                ) : null}
+                                {pick.isPenalty ? 'Shot Clock Violation' : pick.playerName}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatDateTime(run.createdAt)}</td>

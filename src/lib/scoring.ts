@@ -38,6 +38,13 @@ function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+const ZERO_STATS: PlayerStats = {
+  bpm: 0,
+  ws48: 0,
+  vorp: 0,
+  epm: 0
+};
+
 export function scorePlayer(stats: PlayerStats): {
   normalizedMetrics: PlayerStats;
   contribution: number;
@@ -75,6 +82,16 @@ export function scoreLineup(picks: LineupPick[], season = DEFAULT_SEASON): {
   }
 
   const playerScores = picks.map((pick) => {
+    if (pick.isPenalty) {
+      return {
+        pick,
+        stats: ZERO_STATS,
+        usedFallback: false,
+        normalizedMetrics: ZERO_STATS,
+        contribution: 0
+      };
+    }
+
     const statsLookup = lookupPlayerStats(pick.playerName, season);
     const scoredPlayer = scorePlayer(statsLookup.stats);
 

@@ -60,12 +60,15 @@ export default async function DraftPage({
       </div>
 
       <DraftBoard
+        key={`${draftView.id}-${draftView.currentDrawIndex}-${draftView.shotClockDeadlineAt ?? 'done'}`}
         currentTeam={currentTeam}
         roster={roster}
         lineup={draftView.lineup}
         currentDrawIndex={draftView.currentDrawIndex}
         groupCode={draftView.groupCode}
         seed={draftView.seed}
+        shotClockDeadlineAt={draftView.shotClockDeadlineAt}
+        shotClockSeconds={draftView.shotClockSeconds}
         errorMessage={searchParams.error ?? null}
       />
     </div>

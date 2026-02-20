@@ -1,22 +1,35 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { submitPickAction } from '@/app/actions';
-import { SubmitButton } from '@/components/submit-button';
 import { TOTAL_DRAWS } from '@/lib/constants';
+import { getTeamLogoUrl } from '@/lib/data';
 import { cn } from '@/lib/cn';
 import { LINEUP_SLOTS } from '@/lib/types';
-import type { LineupSlot, LineupState, Team } from '@/lib/types';
+import type { LineupSlot, LineupState, RosterPlayer, Team } from '@/lib/types';
 
 type DraftBoardProps = {
   currentTeam: Team;
-  roster: string[];
+  roster: RosterPlayer[];
   lineup: LineupState;
   currentDrawIndex: number;
   groupCode: string | null;
   seed: string | null;
+  shotClockDeadlineAt: string | null;
+  shotClockSeconds: number;
   errorMessage: string | null;
 };
+
+function getSecondsRemaining(deadline: string | null): number {
+  if (!deadline) {
+    return 0;
+  }
+
+  const remainingMs = new Date(deadline).getTime() - Date.now();
+  return Math.max(0, Math.ceil(remainingMs / 1000));
+}
 
 export function DraftBoard({
   currentTeam,
@@ -25,44 +38,124 @@ export function DraftBoard({
   currentDrawIndex,
   groupCode,
   seed,
+  shotClockDeadlineAt,
+  shotClockSeconds,
   errorMessage
 }: DraftBoardProps) {
+  const router = useRouter();
+  const teamLogoUrl = getTeamLogoUrl(currentTeam.abbr);
+
   const [search, setSearch] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<LineupSlot | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isSubmittingPick, setIsSubmittingPick] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState(() =>
+    getSecondsRemaining(shotClockDeadlineAt)
+  );
+  const timeoutHandledRef = useRef(false);
 
   const filteredRoster = useMemo(
     () =>
-      roster.filter((playerName) =>
-        playerName.toLowerCase().includes(search.trim().toLowerCase())
-      ),
+      roster.filter((player) => player.name.toLowerCase().includes(search.trim().toLowerCase())),
     [roster, search]
+  );
+
+  const selectedPlayerProfile = useMemo(
+    () => roster.find((player) => player.name === selectedPlayer) ?? null,
+    [roster, selectedPlayer]
+  );
+
+  const selectedPlayerEligibleSlots = useMemo(
+    () => selectedPlayerProfile?.eligibleSlots ?? [],
+    [selectedPlayerProfile]
   );
 
   const openSlots = LINEUP_SLOTS.filter((slot) => !lineup[slot]);
   const lineupComplete = openSlots.length === 0;
   const progressPercent = ((currentDrawIndex + 1) / TOTAL_DRAWS) * 100;
   const canConfirm = Boolean(
-    selectedPlayer && selectedSlot && openSlots.includes(selectedSlot)
+    selectedPlayer &&
+      selectedSlot &&
+      openSlots.includes(selectedSlot) &&
+      selectedPlayerEligibleSlots.includes(selectedSlot)
   );
+
+  useEffect(() => {
+    setSecondsRemaining(getSecondsRemaining(shotClockDeadlineAt));
+    timeoutHandledRef.current = false;
+  }, [shotClockDeadlineAt, currentDrawIndex]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const remaining = getSecondsRemaining(shotClockDeadlineAt);
+      setSecondsRemaining(remaining);
+
+      if (remaining <= 0 && !timeoutHandledRef.current) {
+        timeoutHandledRef.current = true;
+        router.refresh();
+      }
+    }, 250);
+
+    return () => window.clearInterval(intervalId);
+  }, [router, shotClockDeadlineAt]);
+
+  useEffect(() => {
+    if (selectedSlot && !selectedPlayerEligibleSlots.includes(selectedSlot)) {
+      setSelectedSlot(null);
+    }
+  }, [selectedSlot, selectedPlayerEligibleSlots]);
+
+  useEffect(() => {
+    if (!isConfirmOpen) {
+      setIsSubmittingPick(false);
+    }
+  }, [isConfirmOpen]);
 
   return (
     <>
       <section className="card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-court-700">Current Team</p>
-            <p className="text-xl font-bold text-slate-900">{currentTeam.name}</p>
-            <p className="text-sm text-slate-600" data-testid="draw-progress">
-              Draw {currentDrawIndex + 1}/{TOTAL_DRAWS}
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {teamLogoUrl ? (
+              <Image
+                src={teamLogoUrl}
+                alt={`${currentTeam.name} logo`}
+                width={48}
+                height={48}
+                className="h-12 w-12 rounded-md border border-slate-200 bg-white p-1"
+              />
+            ) : null}
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-court-700">Current Team</p>
+              <p className="text-xl font-bold text-slate-900">{currentTeam.name}</p>
+              <p className="text-sm text-slate-600" data-testid="draw-progress">
+                Draw {currentDrawIndex + 1}/{TOTAL_DRAWS}
+              </p>
+            </div>
           </div>
+
+          <div className="rounded-lg border-2 border-red-700 bg-black px-4 py-2 text-center shadow-[0_0_24px_rgba(220,38,38,0.45)]">
+            <p className="text-[10px] font-semibold tracking-[0.25em] text-red-400">SHOT CLOCK</p>
+            <p
+              className={cn(
+                'font-mono text-4xl font-bold leading-none text-red-500',
+                secondsRemaining <= 5 && 'animate-pulse'
+              )}
+              data-testid="shot-clock"
+            >
+              {String(secondsRemaining).padStart(2, '0')}
+            </p>
+            <p className="text-[10px] text-red-300">{shotClockSeconds}s per draw</p>
+          </div>
+
           <div className="text-sm text-slate-600">
             {groupCode ? <p>Group: {groupCode}</p> : null}
             {seed ? <p>Seed: {seed}</p> : <p>Seed: random</p>}
           </div>
         </div>
+
         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-slate-200">
           <div className="h-full rounded-full bg-court-700" style={{ width: `${progressPercent}%` }} />
         </div>
@@ -89,13 +182,16 @@ export function DraftBoard({
             <p className="text-sm text-slate-500">No players match your search.</p>
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2">
-              {filteredRoster.map((playerName, index) => {
-                const isSelected = selectedPlayer === playerName;
+              {filteredRoster.map((player, index) => {
+                const isSelected = selectedPlayer === player.name;
                 return (
-                  <li key={playerName}>
+                  <li key={player.name}>
                     <button
                       type="button"
-                      onClick={() => setSelectedPlayer(playerName)}
+                      onClick={() => {
+                        setSelectedPlayer(player.name);
+                        setIsConfirmOpen(false);
+                      }}
                       disabled={lineupComplete}
                       className={cn(
                         'w-full rounded-lg border px-3 py-2 text-left text-sm transition',
@@ -106,7 +202,8 @@ export function DraftBoard({
                       )}
                       data-testid={`player-option-${index}`}
                     >
-                      {playerName}
+                      <p className="font-semibold">{player.name}</p>
+                      <p className="text-xs text-slate-500">{player.eligibleSlots.join(' / ')}</p>
                     </button>
                   </li>
                 );
@@ -117,33 +214,44 @@ export function DraftBoard({
 
         <section className="card p-5">
           <h2 className="text-lg font-semibold text-slate-900">Lineup Slots</h2>
-          <p className="mt-1 text-sm text-slate-600">Choose one open slot. Filled slots are locked.</p>
+          <p className="mt-1 text-sm text-slate-600">Select an open slot allowed by the player position.</p>
 
           <div className="mt-4 space-y-2">
             {LINEUP_SLOTS.map((slot) => {
               const pick = lineup[slot];
               const isSelected = selectedSlot === slot;
               const isOpen = !pick;
+              const isEligibleForSelectedPlayer =
+                !selectedPlayer || selectedPlayerEligibleSlots.includes(slot);
+              const isDisabled = !isOpen || !isEligibleForSelectedPlayer;
 
               return (
                 <button
                   key={slot}
                   type="button"
-                  onClick={() => isOpen && setSelectedSlot(slot)}
-                  disabled={!isOpen}
+                  onClick={() => !isDisabled && setSelectedSlot(slot)}
+                  disabled={isDisabled}
                   className={cn(
                     'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left',
-                    isOpen
+                    isOpen && isEligibleForSelectedPlayer
                       ? isSelected
                         ? 'border-court-700 bg-court-50'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                       : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-500'
                   )}
                   data-testid={`slot-${slot}`}
+                  data-slot-open={isOpen ? 'true' : 'false'}
+                  data-slot-eligible={isEligibleForSelectedPlayer ? 'true' : 'false'}
                 >
                   <span className="font-semibold text-slate-900">{slot}</span>
                   <span className="truncate text-xs sm:text-sm">
-                    {pick ? `${pick.playerName} (${pick.teamAbbr})` : 'Open'}
+                    {pick
+                      ? pick.isPenalty
+                        ? 'Shot Clock Violation (0 pts)'
+                        : `${pick.playerName} (${pick.teamAbbr})`
+                      : isEligibleForSelectedPlayer
+                        ? 'Open'
+                        : 'Not eligible'}
                   </span>
                 </button>
               );
@@ -152,6 +260,7 @@ export function DraftBoard({
 
           <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
             <p>Selected player: {selectedPlayer ?? 'None'}</p>
+            <p>Eligible slots: {selectedPlayerEligibleSlots.join(', ') || 'None'}</p>
             <p>Selected slot: {selectedSlot ?? 'None'}</p>
           </div>
 
@@ -176,21 +285,28 @@ export function DraftBoard({
               <span className="font-semibold">{selectedSlot}</span>?
             </p>
 
-            <form action={submitPickAction} className="mt-4 space-y-2">
+            <form
+              action={submitPickAction}
+              className="mt-4 space-y-2"
+              onSubmit={() => setIsSubmittingPick(true)}
+            >
               <input type="hidden" name="playerName" value={selectedPlayer ?? ''} />
               <input type="hidden" name="slot" value={selectedSlot ?? ''} />
-              <SubmitButton
-                label="Yes, lock it in"
-                pendingLabel="Locking..."
+              <button
+                type="submit"
                 className="button-primary w-full"
-                testId="confirm-submit"
-              />
+                disabled={isSubmittingPick}
+                data-testid="confirm-submit"
+              >
+                {isSubmittingPick ? 'Locking...' : 'Yes, lock it in'}
+              </button>
             </form>
 
             <button
               type="button"
               onClick={() => setIsConfirmOpen(false)}
               className="button-secondary mt-2 w-full"
+              disabled={isSubmittingPick}
             >
               Cancel
             </button>

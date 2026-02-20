@@ -17,6 +17,7 @@ model DraftSession {
   currentDrawIndex Int        @default(0)
   lineupJson      String      @default("{}")
   chosenPlayersJson String    @default("[]")
+  drawStartedAt   DateTime    @default(now())
   status          String      @default("DRAFTING")
   runId           String?     @unique
   run             Run?        @relation(fields: [runId], references: [id])
@@ -56,6 +57,7 @@ model RunPick {
   vorp         Float
   epm          Float
   usedFallback Boolean    @default(false)
+  isPenalty    Boolean    @default(false)
   contribution Float
   createdAt    DateTime   @default(now())
 
