@@ -6,7 +6,6 @@
     "postinstall": "./node_modules/.bin/prisma generate",
     "predev": "./node_modules/.bin/prisma migrate deploy",
     "dev": "next dev",
-    "prebuild": "./node_modules/.bin/prisma migrate deploy",
     "build": "next build",
     "prestart": "./node_modules/.bin/prisma migrate deploy",
     "start": "next start",
