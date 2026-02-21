@@ -65,7 +65,8 @@ npm run dev
 ## Sync latest NBA data
 
 Default target is the latest season: `2025-26`.  
-The sync script pulls three seasons by default (`2025-26`, `2024-25`, `2023-24`) for 3-season projections.
+The sync script pulls rosters from live ESPN team roster endpoints (NBA endpoint fallback) and pulls three seasons of advanced stats by default (`2025-26`, `2024-25`, `2023-24`) for 3-season projections.
+If a Basketball-Reference season page is temporarily unavailable, sync falls back to nearest available season stats instead of failing the whole run.
 
 ```bash
 npm run data:sync

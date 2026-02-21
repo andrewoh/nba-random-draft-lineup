@@ -1,6 +1,9 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import existingPlayerPositionsData from '../data/player_positions.json';
+import existingRostersData from '../data/rosters.json';
+import existingStatsData from '../data/stats.json';
 import teamsData from '../data/teams.json';
 
 type Team = { abbr: string; name: string };
@@ -33,6 +36,12 @@ const BASKETBALL_REFERENCE_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   Accept: 'text/html,application/xhtml+xml'
+};
+
+const ESPN_HEADERS = {
+  Accept: 'application/json, text/plain, */*',
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
 
 const TEAM_ID_BY_ABBR: Record<string, string> = {
@@ -70,6 +79,9 @@ const TEAM_ID_BY_ABBR: Record<string, string> = {
 
 const LINEUP_SLOTS = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
 type LineupSlot = (typeof LINEUP_SLOTS)[number];
+const typedExistingStats = existingStatsData as Record<string, AdvancedStats>;
+const typedExistingRosters = existingRostersData as Record<string, string[]>;
+const typedExistingPlayerPositions = existingPlayerPositionsData as Record<string, LineupSlot[]>;
 
 function normalizeName(value: string): string {
   return value
@@ -92,6 +104,15 @@ function seasonStartYear(season: string): number {
 
 function seasonEndYear(season: string): number {
   return seasonStartYear(season) + 1;
+}
+
+function trySeasonStartYear(season: string): number | null {
+  const match = season.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  return Number(match[1]);
 }
 
 function previousSeason(season: string): string {
@@ -178,9 +199,31 @@ function mapNbaPositionToSlots(position: string): LineupSlot[] {
     return exact[normalized];
   }
 
+  const containsGuard = normalized.includes('GUARD');
+  const containsForward = normalized.includes('FORWARD');
+  const containsCenter = normalized.includes('CENTER');
+
+  if (containsGuard || containsForward || containsCenter) {
+    const namedSlots = new Set<LineupSlot>();
+    if (containsGuard) {
+      namedSlots.add('PG');
+      namedSlots.add('SG');
+    }
+    if (containsForward) {
+      namedSlots.add('SF');
+      namedSlots.add('PF');
+    }
+    if (containsCenter) {
+      namedSlots.add('C');
+    }
+    if (namedSlots.size > 0) {
+      return [...namedSlots];
+    }
+  }
+
   const slots = new Set<LineupSlot>();
 
-  for (const token of normalized.split('-')) {
+  for (const token of normalized.split(/[-/,]/)) {
     const value = token.trim();
     if (value === 'PG') slots.add('PG');
     if (value === 'SG') slots.add('SG');
@@ -200,6 +243,123 @@ function mapNbaPositionToSlots(position: string): LineupSlot[] {
   return slots.size > 0 ? [...slots] : [...LINEUP_SLOTS];
 }
 
+function extractEspnTeamEntries(payload: any): any[] {
+  const sportsTeams = payload?.sports?.[0]?.leagues?.[0]?.teams;
+  if (Array.isArray(sportsTeams)) {
+    return sportsTeams;
+  }
+
+  if (Array.isArray(payload?.teams)) {
+    return payload.teams;
+  }
+
+  return [];
+}
+
+function collectEspnAthletes(node: unknown, athletes: any[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectEspnAthletes(item, athletes);
+    }
+    return;
+  }
+
+  if (!node || typeof node !== 'object') {
+    return;
+  }
+
+  const record = node as Record<string, unknown>;
+  if (typeof record.fullName === 'string') {
+    athletes.push(record);
+  }
+
+  for (const value of Object.values(record)) {
+    collectEspnAthletes(value, athletes);
+  }
+}
+
+async function fetchEspnTeamIdByAbbr(): Promise<Map<string, string>> {
+  const payload = await fetchJson(
+    'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams',
+    ESPN_HEADERS
+  );
+
+  const entries = extractEspnTeamEntries(payload);
+  const teamIdByAbbr = new Map<string, string>();
+
+  for (const entry of entries) {
+    const team = (entry?.team ?? entry) as any;
+    const abbr = String(team?.abbreviation ?? '').trim().toUpperCase();
+    const id = String(team?.id ?? '').trim();
+    if (!abbr || !id) {
+      continue;
+    }
+
+    teamIdByAbbr.set(abbr, id);
+  }
+
+  return teamIdByAbbr;
+}
+
+async function fetchEspnRoster(teamId: string): Promise<{ names: string[]; positions: Map<string, LineupSlot[]> }> {
+  const payload = await fetchJson(
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${teamId}/roster`,
+    ESPN_HEADERS
+  );
+
+  const athletes: any[] = [];
+  collectEspnAthletes(payload, athletes);
+
+  const namesSet = new Set<string>();
+  const positions = new Map<string, LineupSlot[]>();
+
+  for (const athlete of athletes) {
+    const rawName = String(athlete?.fullName ?? '').trim();
+    if (!rawName) {
+      continue;
+    }
+
+    const normalizedName = normalizeName(rawName);
+    namesSet.add(rawName);
+
+    const positionRaw = String(
+      athlete?.position?.abbreviation ?? athlete?.position?.displayName ?? ''
+    ).trim();
+    const slots = mapNbaPositionToSlots(positionRaw);
+    positions.set(rawName, slots);
+    positions.set(normalizedName, slots);
+  }
+
+  return {
+    names: [...namesSet].sort((a, b) => a.localeCompare(b)),
+    positions
+  };
+}
+
+async function fetchNbaTeamRosterRows(teamId: string, season: string): Promise<{
+  headers: string[];
+  rows: any[][];
+  playerNameIndex: number;
+  positionIndex: number;
+}> {
+  const url = `https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season=${season}&TeamID=${teamId}`;
+  const payload = await fetchJson(url, NBA_HEADERS);
+  const { headers, rows } = parseNbaResultSet(payload);
+  const playerNameIndex = headers.indexOf('PLAYER');
+  const positionIndex = headers.indexOf('POSITION');
+
+  if (playerNameIndex === -1 || positionIndex === -1) {
+    throw new Error('Could not parse roster payload');
+  }
+
+  return {
+    headers,
+    rows,
+    playerNameIndex,
+    positionIndex
+  };
+}
+
 async function fetchRostersAndPositions(latestAvailableSeason: string): Promise<{
   rosters: Record<string, string[]>;
   playerPositions: Record<string, LineupSlot[]>;
@@ -207,57 +367,83 @@ async function fetchRostersAndPositions(latestAvailableSeason: string): Promise<
   const teams = teamsData as Team[];
   const rosters: Record<string, string[]> = {};
   const playerPositions: Record<string, LineupSlot[]> = {};
+  let espnTeamIdByAbbr = new Map<string, string>();
+
+  try {
+    espnTeamIdByAbbr = await fetchEspnTeamIdByAbbr();
+  } catch (error) {
+    console.warn('Could not fetch ESPN team index. Falling back to NBA roster endpoint only.', error);
+  }
 
   for (const team of teams) {
-    const teamId = TEAM_ID_BY_ABBR[team.abbr];
-    if (!teamId) {
-      continue;
-    }
-
-    const url = `https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season=${latestAvailableSeason}&TeamID=${teamId}`;
-    const payload = await fetchJson(url, NBA_HEADERS);
-    const { headers, rows } = parseNbaResultSet(payload);
-
-    const playerNameIndex = headers.indexOf('PLAYER');
-    const positionIndex = headers.indexOf('POSITION');
-
-    if (playerNameIndex === -1 || positionIndex === -1) {
-      throw new Error(`Could not parse roster payload for ${team.abbr}`);
-    }
-
     const namesSet = new Set<string>();
+    const setPlayerPosition = (name: string, slots: LineupSlot[]) => {
+      const normalized = normalizeName(name);
+      playerPositions[name] = slots;
+      playerPositions[normalized] = slots;
+    };
 
-    const addRows = (inputRows: any[][]) => {
-      for (const row of inputRows) {
+    const espnTeamId = espnTeamIdByAbbr.get(team.abbr);
+    if (espnTeamId) {
+      try {
+        const espn = await fetchEspnRoster(espnTeamId);
+        for (const name of espn.names) {
+          namesSet.add(name);
+        }
+        for (const [name, slots] of espn.positions.entries()) {
+          setPlayerPosition(name, slots);
+        }
+      } catch (error) {
+        console.warn(`Could not fetch ESPN roster for ${team.abbr}:`, error);
+      }
+    }
+
+    const nbaTeamId = TEAM_ID_BY_ABBR[team.abbr];
+    const addNbaSeasonRows = async (season: string) => {
+      if (!nbaTeamId) {
+        return;
+      }
+
+      const { rows, playerNameIndex, positionIndex } = await fetchNbaTeamRosterRows(nbaTeamId, season);
+      for (const row of rows) {
         const playerName = String(row[playerNameIndex] ?? '').trim();
         const position = String(row[positionIndex] ?? '').trim();
-
         if (!playerName) {
           continue;
         }
 
         namesSet.add(playerName);
-
-        const normalizedPlayer = normalizeName(playerName);
-        const mappedSlots = mapNbaPositionToSlots(position);
-        playerPositions[normalizedPlayer] = mappedSlots;
-        playerPositions[playerName] = mappedSlots;
+        setPlayerPosition(playerName, mapNbaPositionToSlots(position));
       }
     };
 
-    addRows(rows);
+    // Ensure we have a full current-team list; backfill with NBA endpoint if ESPN is short.
+    if (namesSet.size < 12) {
+      try {
+        await addNbaSeasonRows(latestAvailableSeason);
+      } catch (error) {
+        console.warn(`NBA roster fetch failed for ${team.abbr} (${latestAvailableSeason}):`, error);
+      }
+    }
 
-    // If a roster snapshot comes back too short, backfill from prior season to keep realistic depth.
     if (namesSet.size < 12) {
       const previous = previousSeason(latestAvailableSeason);
       try {
-        const previousUrl = `https://stats.nba.com/stats/commonteamroster?LeagueID=00&Season=${previous}&TeamID=${teamId}`;
-        const previousPayload = await fetchJson(previousUrl, NBA_HEADERS);
-        const previousResultSet = parseNbaResultSet(previousPayload);
-        addRows(previousResultSet.rows);
+        await addNbaSeasonRows(previous);
       } catch (error) {
-        console.warn(`Roster backfill failed for ${team.abbr}:`, error);
+        console.warn(`NBA roster backfill failed for ${team.abbr} (${previous}):`, error);
       }
+    }
+
+    // Final safety fallback to current file so the app never ends up with empty teams.
+    if (namesSet.size === 0) {
+      const existing = typedExistingRosters[team.abbr] ?? [];
+      for (const playerName of existing) {
+        namesSet.add(playerName);
+        const slots = typedExistingPlayerPositions[playerName] ?? [...LINEUP_SLOTS];
+        setPlayerPosition(playerName, slots);
+      }
+      console.warn(`Using existing local roster fallback for ${team.abbr}`);
     }
 
     rosters[team.abbr] = [...namesSet].sort((a, b) => a.localeCompare(b));
@@ -273,14 +459,20 @@ async function fetchBasketballReferenceSeason(
   const url = `https://www.basketball-reference.com/leagues/NBA_${year}_advanced.html`;
   const html = await fetchText(url, BASKETBALL_REFERENCE_HEADERS);
 
-  const tableMatch = html.match(
-    /<table[^>]*id="advanced_stats"[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i
-  );
-  if (!tableMatch) {
+  const extractTbody = (source: string): string | null => {
+    const tableMatch = source.match(
+      /<table[^>]*id=['"]advanced_stats['"][\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i
+    );
+    return tableMatch?.[1] ?? null;
+  };
+
+  const htmlWithoutComments = html.replace(/<!--/g, '').replace(/-->/g, '');
+  const tbodyHtml = extractTbody(html) ?? extractTbody(htmlWithoutComments);
+
+  if (!tbodyHtml) {
     throw new Error(`Could not parse Basketball-Reference table for ${season}`);
   }
 
-  const tbodyHtml = tableMatch[1];
   const selectedRows = tbodyHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
   const byPlayer = new Map<string, BasketRefRow>();
 
@@ -337,6 +529,47 @@ async function fetchBasketballReferenceSeason(
   return byPlayer;
 }
 
+function getExistingSeasonStats(season: string): Map<string, BasketRefRow> {
+  const byPlayer = new Map<string, BasketRefRow>();
+
+  for (const [key, stats] of Object.entries(typedExistingStats)) {
+    const dividerIndex = key.lastIndexOf('|');
+    if (dividerIndex === -1) {
+      continue;
+    }
+
+    const playerName = key.slice(0, dividerIndex).trim();
+    const statSeason = key.slice(dividerIndex + 1).trim();
+    if (statSeason !== season || !playerName) {
+      continue;
+    }
+
+    const normalized = normalizeName(playerName);
+    byPlayer.set(normalized, {
+      playerName,
+      teamId: 'N/A',
+      bpm: stats.bpm,
+      ws48: stats.ws48,
+      vorp: stats.vorp
+    });
+  }
+
+  return byPlayer;
+}
+
+function nearestSeason(targetSeason: string, availableSeasons: string[]): string | null {
+  const targetYear = trySeasonStartYear(targetSeason);
+  if (targetYear === null || availableSeasons.length === 0) {
+    return availableSeasons[0] ?? null;
+  }
+
+  return [...availableSeasons].sort((a, b) => {
+    const aYear = trySeasonStartYear(a) ?? Number.MAX_SAFE_INTEGER;
+    const bYear = trySeasonStartYear(b) ?? Number.MAX_SAFE_INTEGER;
+    return Math.abs(aYear - targetYear) - Math.abs(bYear - targetYear);
+  })[0]!;
+}
+
 function positionBaseline(primarySlot: LineupSlot): AdvancedStats {
   if (primarySlot === 'PG') {
     return { bpm: 0.8, ws48: 0.093, vorp: 0.7, epm: 0.7 };
@@ -377,12 +610,64 @@ async function main() {
   console.log(`Pulling seasons: ${seasons.join(', ')}`);
 
   const { rosters, playerPositions } = await fetchRostersAndPositions(latestAvailableSeason);
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const dataDir = path.join(rootDir, 'data');
+
+  // Persist roster/position updates even if stat scraping partially fails.
+  await writeFile(path.join(dataDir, 'rosters.json'), `${JSON.stringify(rosters, null, 2)}\n`, 'utf8');
+  await writeFile(
+    path.join(dataDir, 'player_positions.json'),
+    `${JSON.stringify(playerPositions, null, 2)}\n`,
+    'utf8'
+  );
+  console.log('Updated rosters.json and player_positions.json');
 
   const statsBySeason = new Map<string, Map<string, BasketRefRow>>();
+  const unresolvedSeasons: string[] = [];
+
   for (const season of seasons) {
-    const seasonRows = await fetchBasketballReferenceSeason(season);
-    statsBySeason.set(season, seasonRows);
-    console.log(`Fetched ${seasonRows.size} player stat rows for ${season}`);
+    try {
+      const seasonRows = await fetchBasketballReferenceSeason(season);
+      statsBySeason.set(season, seasonRows);
+      console.log(`Fetched ${seasonRows.size} player stat rows for ${season}`);
+      continue;
+    } catch (error) {
+      console.warn(`Live stat fetch failed for ${season}:`, error);
+    }
+
+    const existingRows = getExistingSeasonStats(season);
+    if (existingRows.size > 0) {
+      statsBySeason.set(season, existingRows);
+      console.warn(`Using existing local stat rows for ${season} (${existingRows.size} rows).`);
+      continue;
+    }
+
+    unresolvedSeasons.push(season);
+  }
+
+  if (statsBySeason.size === 0) {
+    throw new Error(
+      'Could not load advanced stats for any season. Rosters/positions were updated, but stats could not be refreshed.'
+    );
+  }
+
+  if (unresolvedSeasons.length > 0) {
+    const available = [...statsBySeason.keys()];
+
+    for (const missingSeason of unresolvedSeasons) {
+      const fallbackSeason = nearestSeason(missingSeason, available);
+      if (!fallbackSeason) {
+        continue;
+      }
+
+      const fallbackRows = statsBySeason.get(fallbackSeason);
+      if (!fallbackRows) {
+        continue;
+      }
+
+      statsBySeason.set(missingSeason, new Map(fallbackRows));
+      console.warn(`Using ${fallbackSeason} stats as fallback for ${missingSeason}.`);
+    }
   }
 
   const allPlayers = [...new Set(Object.values(rosters).flat())].map((playerName) =>
@@ -429,15 +714,6 @@ async function main() {
     }
   }
 
-  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const dataDir = path.join(rootDir, 'data');
-
-  await writeFile(path.join(dataDir, 'rosters.json'), `${JSON.stringify(rosters, null, 2)}\n`, 'utf8');
-  await writeFile(
-    path.join(dataDir, 'player_positions.json'),
-    `${JSON.stringify(playerPositions, null, 2)}\n`,
-    'utf8'
-  );
   await writeFile(path.join(dataDir, 'stats.json'), `${JSON.stringify(statsOutput, null, 2)}\n`, 'utf8');
 
   console.log('Data sync complete. Updated rosters.json, player_positions.json, and stats.json');
