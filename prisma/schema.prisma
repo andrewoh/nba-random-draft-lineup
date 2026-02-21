@@ -10,6 +10,7 @@ datasource db {
 model DraftSession {
   id              String      @id @default(cuid())
   cookieToken     String      @unique
+  userName        String?
   groupCode       String?
   seed            String?
   drawSequenceJson String
@@ -30,6 +31,7 @@ model DraftSession {
 model Run {
   id                String        @id @default(cuid())
   shareCode         String        @unique
+  userName          String?
   groupCode         String?
   seed              String?
   teamScore         Float

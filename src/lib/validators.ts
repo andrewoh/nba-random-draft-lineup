@@ -1,9 +1,15 @@
 import { z } from 'zod';
+import {
+  GROUP_CODE_MAX_LENGTH,
+  SEED_MAX_LENGTH,
+  USER_NAME_MAX_LENGTH
+} from '@/lib/constants';
 import { LINEUP_SLOTS } from '@/lib/types';
 
 export const startGameSchema = z.object({
-  groupCode: z.string().max(64).optional(),
-  seed: z.string().max(128).optional()
+  userName: z.string().max(USER_NAME_MAX_LENGTH).optional(),
+  groupCode: z.string().max(GROUP_CODE_MAX_LENGTH).optional(),
+  seed: z.string().max(SEED_MAX_LENGTH).optional()
 });
 
 export const draftPickSchema = z.object({

@@ -14,7 +14,7 @@ Production-style MVP built with Next.js App Router + TypeScript + Tailwind + Pri
 - Filled slots lock for the rest of the round.
 - After 5 picks, app computes normalized `Team Score` (0-100) from projected 3-season advanced metrics, stores run, and generates a share code.
 - Shared results are read-only via `/results/[shareCode]`.
-- Friend leaderboard supports filtering by `groupCode`.
+- Friend leaderboard supports filtering by `groupCode` and displays the run owner name.
 
 ## Stack
 
@@ -150,6 +150,7 @@ Migration:
 
 - `prisma/migrations/20260220000000_init/migration.sql`
 - `prisma/migrations/20260220100000_shot_clock_penalties/migration.sql`
+- `prisma/migrations/20260221131000_add_user_name/migration.sql`
 
 Main models:
 
@@ -159,10 +160,10 @@ Main models:
 
 ## Routes
 
-- `/` Home (start game, group code, seed, rules)
+- `/` Home (start game, name, group code, seed, rules)
 - `/draft` Draft board
 - `/results/[shareCode]` Read-only run results
-- `/leaderboard` Friend leaderboard with group filter
+- `/leaderboard` Friend leaderboard with group filter and run owner name
 
 ## Deploy for a shareable link (Render)
 

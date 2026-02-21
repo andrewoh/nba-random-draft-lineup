@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 test('completes one full seeded draft round', async ({ page }) => {
   await page.goto('/');
 
+  await page.fill('#userName', 'Playwright User');
   await page.fill('#groupCode', 'PLAYWRIGHT');
   await page.fill('#seed', 'playwright-seed');
   await page.getByTestId('start-game-button').click();

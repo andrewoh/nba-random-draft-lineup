@@ -61,6 +61,7 @@ export default async function LeaderboardPage({
                 <tr>
                   <th className="px-4 py-3">Rank</th>
                   <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Share Code</th>
                   <th className="px-4 py-3">Group</th>
                   <th className="px-4 py-3">Lineup</th>
@@ -72,6 +73,7 @@ export default async function LeaderboardPage({
                   <tr key={run.id} className="border-t border-slate-100 align-top">
                     <td className="px-4 py-3 font-semibold text-slate-900">#{index + 1}</td>
                     <td className="px-4 py-3 font-semibold text-slate-900">{run.teamScore.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-slate-700">{run.userName ?? 'Anonymous'}</td>
                     <td className="px-4 py-3">
                       <Link href={`/results/${run.shareCode}`} className="font-semibold text-court-700 hover:underline">
                         {run.shareCode}

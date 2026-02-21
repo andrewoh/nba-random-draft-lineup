@@ -69,6 +69,7 @@ export default async function DraftPage({
         roster={roster}
         lineup={draftView.lineup}
         currentDrawIndex={draftView.currentDrawIndex}
+        userName={draftView.userName}
         groupCode={draftView.groupCode}
         seed={draftView.seed}
         shotClockDeadlineAt={draftView.shotClockDeadlineAt}

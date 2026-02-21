@@ -24,6 +24,20 @@ export default function HomePage({
 
         <form action={startGameAction} className="mt-5 space-y-4">
           <div>
+            <label htmlFor="userName" className="mb-1 block text-sm font-medium text-slate-700">
+              Your Name (optional)
+            </label>
+            <input
+              id="userName"
+              name="userName"
+              className="input"
+              placeholder="e.g. Andrew"
+              autoComplete="off"
+              maxLength={32}
+            />
+          </div>
+
+          <div>
             <label htmlFor="groupCode" className="mb-1 block text-sm font-medium text-slate-700">
               Group Code (optional)
             </label>
@@ -66,6 +80,7 @@ export default function HomePage({
       <section className="card p-6">
         <h2 className="text-lg font-semibold text-slate-900">Rules</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-600">
+          <li>Enter your name and a shared Group Code so friends can compare scores.</li>
           <li>Each draw gives one random NBA team with no repeats in the round.</li>
           <li>Pick exactly one player from that team roster.</li>
           <li>Players can only be assigned to real eligible positions (no PG at C).</li>

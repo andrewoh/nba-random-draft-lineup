@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 
 async function createSampleRun(input: {
   shareCode: string;
+  userName: string;
   groupCode: string;
   seed: string;
   picks: LineupPick[];
@@ -15,6 +16,7 @@ async function createSampleRun(input: {
   await prisma.run.create({
     data: {
       shareCode: input.shareCode,
+      userName: input.userName,
       groupCode: input.groupCode,
       seed: input.seed,
       teamScore: scoring.teamScore,
@@ -52,6 +54,7 @@ async function main() {
 
   await createSampleRun({
     shareCode: 'DEMO01',
+    userName: 'Alex',
     groupCode: 'DEMO',
     seed: 'friends-night-1',
     picks: [
@@ -65,6 +68,7 @@ async function main() {
 
   await createSampleRun({
     shareCode: 'DEMO02',
+    userName: 'Jordan',
     groupCode: 'DEMO',
     seed: 'friends-night-2',
     picks: [

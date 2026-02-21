@@ -42,6 +42,11 @@ export default async function ResultsPage({
             <p>
               Share Code: <span className="font-semibold">{run.shareCode}</span>
             </p>
+            {run.userName ? (
+              <p>
+                Name: <span className="font-semibold">{run.userName}</span>
+              </p>
+            ) : null}
             {run.groupCode ? (
               <p>
                 Group: <span className="font-semibold">{run.groupCode}</span>

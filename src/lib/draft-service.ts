@@ -16,7 +16,12 @@ import { createSeededRng } from '@/lib/rng';
 import { getOpenSlots, validatePick, applyPickToLineup } from '@/lib/rules';
 import { scoreLineup } from '@/lib/scoring';
 import { safeParseJson, toJsonString } from '@/lib/serialization';
-import { generateShareCode, normalizeGroupCode, normalizeSeed } from '@/lib/share-code';
+import {
+  generateShareCode,
+  normalizeGroupCode,
+  normalizeSeed,
+  normalizeUserName
+} from '@/lib/share-code';
 import { DRAFT_STATUSES, LINEUP_SLOTS } from '@/lib/types';
 import type { DraftStatus, LineupPick, LineupSlot, LineupState } from '@/lib/types';
 
@@ -71,6 +76,7 @@ function isClockExpired(drawStartedAt: Date, now = new Date()): boolean {
 type SessionWithRun = {
   id: string;
   cookieToken: string;
+  userName: string | null;
   groupCode: string | null;
   seed: string | null;
   drawSequenceJson: string;
@@ -170,6 +176,7 @@ async function persistDraftState(input: {
   const run = await tx.run.create({
     data: {
       shareCode,
+      userName: session.userName,
       groupCode: session.groupCode,
       seed: session.seed,
       teamScore: scoring.teamScore,
@@ -309,6 +316,7 @@ function buildDraftView(session: SessionWithRun): DraftView {
     id: session.id,
     cookieToken: session.cookieToken,
     status: parseDraftStatus(session.status),
+    userName: session.userName,
     groupCode: session.groupCode,
     seed: session.seed,
     drawSequence,
@@ -324,9 +332,11 @@ function buildDraftView(session: SessionWithRun): DraftView {
 }
 
 export async function createDraftSession(input: {
+  userName?: string | null;
   groupCode?: string | null;
   seed?: string | null;
 }) {
+  const userName = normalizeUserName(input.userName);
   const groupCode = normalizeGroupCode(input.groupCode);
   const seed = normalizeSeed(input.seed);
   const drawSequence = buildDrawSequence(seed);
@@ -335,6 +345,7 @@ export async function createDraftSession(input: {
   return db.draftSession.create({
     data: {
       cookieToken,
+      userName,
       groupCode,
       seed,
       drawSequenceJson: toJsonString(drawSequence),
@@ -352,6 +363,7 @@ export type DraftView = {
   id: string;
   cookieToken: string;
   status: DraftStatus;
+  userName: string | null;
   groupCode: string | null;
   seed: string | null;
   drawSequence: string[];

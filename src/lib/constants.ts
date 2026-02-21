@@ -11,6 +11,7 @@ export const SHOT_CLOCK_SECONDS =
 export const SHOT_CLOCK_MS = SHOT_CLOCK_SECONDS * 1000;
 export const GROUP_CODE_MAX_LENGTH = 16;
 export const SEED_MAX_LENGTH = 64;
+export const USER_NAME_MAX_LENGTH = 32;
 export const SHARE_CODE_LENGTH = 6;
 export const SHOT_CLOCK_PENALTY_PLAYER_NAME = 'Shot Clock Violation';
 

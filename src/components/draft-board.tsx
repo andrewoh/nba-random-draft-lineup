@@ -15,6 +15,7 @@ type DraftBoardProps = {
   roster: RosterPlayer[];
   lineup: LineupState;
   currentDrawIndex: number;
+  userName: string | null;
   groupCode: string | null;
   seed: string | null;
   shotClockDeadlineAt: string | null;
@@ -36,6 +37,7 @@ export function DraftBoard({
   roster,
   lineup,
   currentDrawIndex,
+  userName,
   groupCode,
   seed,
   shotClockDeadlineAt,
@@ -143,6 +145,7 @@ export function DraftBoard({
           </div>
 
           <div className="text-sm text-slate-600">
+            {userName ? <p>You: {userName}</p> : null}
             {groupCode ? <p>Group: {groupCode}</p> : null}
             {seed ? <p>Seed: {seed}</p> : <p>Seed: random</p>}
           </div>

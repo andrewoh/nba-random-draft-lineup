@@ -21,11 +21,13 @@ export async function startGameAction(formData: FormData) {
 
   try {
     const parsed = startGameSchema.parse({
+      userName: formData.get('userName')?.toString() ?? '',
       groupCode: formData.get('groupCode')?.toString() ?? '',
       seed: formData.get('seed')?.toString() ?? ''
     });
 
     const session = await createDraftSession({
+      userName: parsed.userName,
       groupCode: parsed.groupCode,
       seed: parsed.seed
     });

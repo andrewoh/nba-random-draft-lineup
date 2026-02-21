@@ -1,4 +1,9 @@
-import { GROUP_CODE_MAX_LENGTH, SEED_MAX_LENGTH, SHARE_CODE_LENGTH } from '@/lib/constants';
+import {
+  GROUP_CODE_MAX_LENGTH,
+  SEED_MAX_LENGTH,
+  SHARE_CODE_LENGTH,
+  USER_NAME_MAX_LENGTH
+} from '@/lib/constants';
 
 const SHARE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -37,4 +42,21 @@ export function normalizeSeed(raw: string | null | undefined): string | null {
   }
 
   return cleaned.slice(0, SEED_MAX_LENGTH);
+}
+
+export function normalizeUserName(raw: string | null | undefined): string | null {
+  if (!raw) {
+    return null;
+  }
+
+  const cleaned = raw
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-zA-Z0-9 ._'-]/g, '');
+
+  if (!cleaned) {
+    return null;
+  }
+
+  return cleaned.slice(0, USER_NAME_MAX_LENGTH);
 }
