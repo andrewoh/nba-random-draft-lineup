@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scoreLineup, scorePlayer } from '@/lib/scoring';
+import { adjustStatsForSeasonSample, scoreLineup, scorePlayer } from '@/lib/scoring';
 import type { LineupPick } from '@/lib/types';
 
 describe('score normalization', () => {
@@ -57,5 +57,26 @@ describe('score normalization', () => {
     expect(result.teamScore).toBe(0);
     expect(result.playerScores[0]?.contribution).toBe(0);
     expect(result.playerScores[0]?.usedFallback).toBe(false);
+  });
+
+  it('projects vorp upward for 1-2 season samples to reduce rookie bias', () => {
+    const oneSeason = adjustStatsForSeasonSample(
+      { bpm: 1.5, ws48: 0.11, vorp: 1.2, epm: 1.6 },
+      { projectedFromSeasons: 1, usedFallback: false }
+    );
+
+    const twoSeasons = adjustStatsForSeasonSample(
+      { bpm: 1.5, ws48: 0.11, vorp: 1.2, epm: 1.6 },
+      { projectedFromSeasons: 2, usedFallback: false }
+    );
+
+    const fallback = adjustStatsForSeasonSample(
+      { bpm: 1.5, ws48: 0.11, vorp: 1.2, epm: 1.6 },
+      { projectedFromSeasons: 0, usedFallback: true }
+    );
+
+    expect(oneSeason.vorp).toBe(1.92);
+    expect(twoSeasons.vorp).toBe(1.8);
+    expect(fallback.vorp).toBe(1.2);
   });
 });

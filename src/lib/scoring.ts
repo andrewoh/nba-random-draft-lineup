@@ -1,16 +1,16 @@
-import { DEFAULT_SEASON } from '@/lib/constants';
+import { DEFAULT_SEASON, STATS_LOOKBACK_SEASONS } from '@/lib/constants';
 import { lookupPlayerStats } from '@/lib/data';
 import type { LineupPick, PlayerScoreBreakdown, PlayerStats } from '@/lib/types';
 
 const METRIC_WEIGHTS = {
   // Highest impact two-way metric, gives broad value signal.
-  bpm: 0.35,
+  bpm: 0.4,
   // Per-possession win impact metric.
-  ws48: 0.3,
-  // Cumulative value metric.
-  vorp: 0.2,
+  ws48: 0.32,
+  // Keep cumulative value weight lower to avoid over-penalizing rookies.
+  vorp: 0.08,
   // External impact proxy.
-  epm: 0.15
+  epm: 0.2
 } as const;
 
 const METRIC_RANGES: Record<keyof PlayerStats, { min: number; max: number }> = {
@@ -44,6 +44,31 @@ const ZERO_STATS: PlayerStats = {
   vorp: 0,
   epm: 0
 };
+
+export function adjustStatsForSeasonSample(
+  stats: PlayerStats,
+  input: { projectedFromSeasons: number; usedFallback: boolean }
+): PlayerStats {
+  if (input.usedFallback) {
+    return stats;
+  }
+
+  if (
+    input.projectedFromSeasons <= 0 ||
+    input.projectedFromSeasons >= STATS_LOOKBACK_SEASONS
+  ) {
+    return stats;
+  }
+
+  // Project cumulative VORP toward a 3-season comparable baseline for 1-2 season players.
+  const sampleFactor = STATS_LOOKBACK_SEASONS / input.projectedFromSeasons;
+  const vorpFactor = clamp(sampleFactor, 1, 1.6);
+
+  return {
+    ...stats,
+    vorp: Number((stats.vorp * vorpFactor).toFixed(3))
+  };
+}
 
 export function scorePlayer(stats: PlayerStats): {
   normalizedMetrics: PlayerStats;
@@ -93,11 +118,15 @@ export function scoreLineup(picks: LineupPick[], season = DEFAULT_SEASON): {
     }
 
     const statsLookup = lookupPlayerStats(pick.playerName, season);
-    const scoredPlayer = scorePlayer(statsLookup.stats);
+    const adjustedStats = adjustStatsForSeasonSample(statsLookup.stats, {
+      projectedFromSeasons: statsLookup.projectedFromSeasons,
+      usedFallback: statsLookup.usedFallback
+    });
+    const scoredPlayer = scorePlayer(adjustedStats);
 
     return {
       pick,
-      stats: statsLookup.stats,
+      stats: adjustedStats,
       usedFallback: statsLookup.usedFallback,
       normalizedMetrics: scoredPlayer.normalizedMetrics,
       contribution: scoredPlayer.contribution
